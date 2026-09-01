@@ -1,0 +1,38 @@
+name: Daily Amazon Price Check
+
+on:
+  schedule:
+    # Runs daily at 08:00 UTC (09:00 AM Irish Standard Time)
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allows you to manually trigger a test run anytime from GitHub UI
+
+jobs:
+  check-price:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+
+      - name: Install Playwright Browsers and OS Dependencies
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Run Price Tracker
+        env:
+          MY_EMAIL: ${{ secrets.MY_EMAIL }}
+          MY_PASSWORD: ${{ secrets.MY_PASSWORD }}
+          MY_RECIPIENT: ${{ secrets.MY_RECIPIENT }}
+        run: |
+          python tracker.py
