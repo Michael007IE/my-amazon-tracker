@@ -11,15 +11,19 @@ from playwright.sync_api import sync_playwright
 PRODUCT_URL = (
     "https://www.amazon.ie/TP-Link-Deco-X50-5G-AX3000Mbps-Ultra-Fast/dp/B0BZWMLS6P/"
 )
-TARGET_PRICE = 500.00
+TARGET_PRICE = 500.00  # Set to 500.00 temporarily if you want to test the Telegram alert
 
+# Read credentials from GitHub Secrets
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
 def handle_amazon_captcha(page) -> bool:
-    """Detects and solves Amazon's visual CAPTCHA challenge."""
-    is_captcha = "validateCaptcha" in page.url or page.locator("form[action*='validateCaptcha']").is_visible(timeout=2000)
+    """Detects and automatically solves Amazon's image CAPTCHA challenge."""
+    is_captcha = "validateCaptcha" in page.url or page.locator(
+        "form[action*='validateCaptcha']"
+    ).is_visible(timeout=2000)
+
     if not is_captcha:
         return True
 
@@ -27,9 +31,9 @@ def handle_amazon_captcha(page) -> bool:
     try:
         captcha_img = page.locator("div.a-row img, div.a-box-inner img").first
         img_url = captcha_img.get_attribute("src")
-        
+
         if not img_url:
-            print("[!] Could not locate CAPTCHA image URL.")
+            print("[!] Could not locate CAPTCHA image source URL.")
             return False
 
         captcha = AmazonCaptcha.fromlink(img_url)
@@ -41,20 +45,23 @@ def handle_amazon_captcha(page) -> bool:
         page.wait_for_load_state("domcontentloaded", timeout=15000)
         page.wait_for_timeout(2000)
 
-        # Check if CAPTCHA was cleared
-        if "validateCaptcha" in page.url or page.locator("#captchacharacters").is_visible(timeout=1000):
+        # Verify whether the captcha was dismissed
+        if "validateCaptcha" in page.url or page.locator(
+            "#captchacharacters"
+        ).is_visible(timeout=1000):
             print("[!] CAPTCHA solve rejected or new challenge issued.")
             return False
 
         print("[+] CAPTCHA successfully bypassed!")
         return True
+
     except Exception as e:
         print(f"[!] Error solving CAPTCHA: {e}")
         return False
 
 
 def extract_price_from_page(page) -> float | None:
-    """Extracts price using primary and fallback price selectors."""
+    """Extracts price using Amazon's primary and fallback selectors."""
     price_element = page.locator(".a-price .a-offscreen").first
     if price_element.is_visible(timeout=5000):
         raw_text = price_element.inner_text()
@@ -73,6 +80,7 @@ def extract_price_from_page(page) -> float | None:
         else:
             return None
 
+    # Strip currency symbols and standardize commas to decimal points
     cleaned = re.sub(r"[^\d.,]", "", raw_text).replace(",", ".")
     try:
         return float(cleaned)
@@ -81,6 +89,7 @@ def extract_price_from_page(page) -> float | None:
 
 
 def get_current_price(url: str) -> float | None:
+    """Launches Playwright headless browser with bot-evasion flags."""
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -113,7 +122,7 @@ def get_current_price(url: str) -> float | None:
             if not handle_amazon_captcha(page):
                 return None
 
-            # Handle cookie consent banner if present
+            # Dismiss cookie consent modal if present
             cookie_btn = page.locator("#sp-cc-accept")
             if cookie_btn.is_visible(timeout=3000):
                 cookie_btn.click()
@@ -130,22 +139,24 @@ def get_current_price(url: str) -> float | None:
 
 
 def send_telegram_alert(current_price: float):
+    """Sends a formatted push notification using Telegram's HTML parse mode."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("[!] Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secrets.")
         sys.exit(1)
 
     message = (
-        f"🚨 *Amazon Price Drop Alert\\!*\n\n"
-        f"*Product:* TP\\-Link Deco X50\\-5G\n"
-        f"*New Price:* *€{current_price:.2f}* \\(Target: < €{TARGET_PRICE:.2f}\\)\n\n"
-        f"[View on Amazon]({PRODUCT_URL})"
+        f"🚨 <b>Amazon Price Drop Alert!</b>\n\n"
+        f"<b>Product:</b> TP-Link Deco X50-5G\n"
+        f"<b>New Price:</b> <b>€{current_price:.2f}</b> (Target: &lt; €{TARGET_PRICE:.2f})\n\n"
+        f'<a href="{PRODUCT_URL}">View on Amazon</a>'
     )
 
     api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
-        "parse_mode": "MarkdownV2",
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False,
     }
 
     res = requests.post(api_url, json=payload, timeout=10)
