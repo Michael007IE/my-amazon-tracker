@@ -2,9 +2,9 @@ name: Daily Amazon Price Check
 
 on:
   schedule:
-    # Runs daily at 08:00 UTC (09:00 AM Irish Standard Time)
+    # Runs daily at 08:00 UTC (09:00 AM Irish Time)
     - cron: '0 8 * * *'
-  workflow_dispatch: # Allows you to manually trigger a test run anytime from GitHub UI
+  workflow_dispatch:
 
 jobs:
   check-price:
@@ -23,16 +23,15 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install playwright
+          pip install playwright requests
 
-      - name: Install Playwright Browsers and OS Dependencies
+      - name: Install Playwright Browsers
         run: |
           python -m playwright install --with-deps chromium
 
       - name: Run Price Tracker
         env:
-          MY_EMAIL: ${{ secrets.MY_EMAIL }}
-          MY_PASSWORD: ${{ secrets.MY_PASSWORD }}
-          MY_RECIPIENT: ${{ secrets.MY_RECIPIENT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python tracker.py

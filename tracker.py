@@ -1,9 +1,7 @@
 import os
 import re
-import smtplib
 import sys
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import requests
 from playwright.sync_api import sync_playwright
 
 # ==========================================
@@ -12,15 +10,11 @@ from playwright.sync_api import sync_playwright
 PRODUCT_URL = (
     "https://www.amazon.ie/TP-Link-Deco-X50-5G-AX3000Mbps-Ultra-Fast/dp/B0BZWMLS6P/"
 )
-TARGET_PRICE = 280.00
+TARGET_PRICE = 320.00
 
-# Reading from GitHub Secrets
-SENDER_EMAIL = os.getenv("MY_EMAIL")
-SENDER_APP_PASSWORD = os.getenv("MY_PASSWORD")
-RECEIVER_EMAIL = os.getenv("MY_RECIPIENT")
-
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465
+# Telegram Bot Secrets
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
 def extract_price_from_page(page) -> float | None:
@@ -77,55 +71,56 @@ def get_current_price(url: str) -> float | None:
         page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
 
         try:
-            print(f"[*] Fetching: {url}")
+            print(f"[*] Navigating to: {url}")
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
-            # Dismiss cookie banner if present
-            cookie_accept_button = page.locator("#sp-cc-accept")
-            if cookie_accept_button.is_visible(timeout=3000):
-                cookie_accept_button.click()
+            # Accept cookies if banner appears
+            cookie_btn = page.locator("#sp-cc-accept")
+            if cookie_btn.is_visible(timeout=3000):
+                cookie_btn.click()
 
             page.wait_for_timeout(2000)
 
-            # Check if Amazon presented a bot challenge
             if "validateCaptcha" in page.url or page.locator("form[action*='validateCaptcha']").is_visible(timeout=2000):
-                print("[!] Blocked by Amazon CAPTCHA on runner.")
+                print("[!] Blocked by Amazon CAPTCHA.")
                 return None
 
             return extract_price_from_page(page)
 
         except Exception as e:
-            print(f"[!] Error during scrape: {e}")
+            print(f"[!] Scrape error: {e}")
             return None
         finally:
             context.close()
             browser.close()
 
 
-def send_price_alert(current_price: float):
-    """Sends the alert email via SMTP."""
-    if not all([SENDER_EMAIL, SENDER_APP_PASSWORD, RECEIVER_EMAIL]):
-        print("[!] Missing email configuration secrets.")
+def send_telegram_alert(current_price: float):
+    """Sends an instant push message via Telegram Bot API."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("[!] Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secrets.")
         sys.exit(1)
 
-    subject = f"Price Drop Alert! TP-Link Deco X50-5G is now €{current_price:.2f}"
-    body = (
-        f"The TP-Link Deco X50-5G price has dropped below €{TARGET_PRICE:.2f}!\n\n"
-        f"Current Price: €{current_price:.2f}\n\n"
-        f"Buy it here: {PRODUCT_URL}"
+    message = (
+        f"🚨 *Amazon Price Drop Alert\\!*\n\n"
+        f"*Product:* TP\\-Link Deco X50\\-5G\n"
+        f"*New Price:* *€{current_price:.2f}* \\(Target: < €{TARGET_PRICE:.2f}\\)\n\n"
+        f"[View on Amazon]({PRODUCT_URL})"
     )
 
-    msg = MIMEMultipart()
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = RECEIVER_EMAIL
-    msg["Subject"] = subject
-    msg.attach(MIMEText(body, "plain"))
+    api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "MarkdownV2",
+        "disable_web_page_preview": False,
+    }
 
-    with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
-        server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
-        server.send_message(msg)
-
-    print(f"[+] Alert email sent to {RECEIVER_EMAIL}!")
+    response = requests.post(api_url, json=payload, timeout=10)
+    if response.status_code == 200:
+        print("[+] Telegram alert sent successfully!")
+    else:
+        print(f"[!] Failed to send Telegram message: {response.text}")
 
 
 if __name__ == "__main__":
@@ -135,10 +130,10 @@ if __name__ == "__main__":
         print("[-] Could not retrieve price.")
         sys.exit(0)
 
-    print(f"[*] Extracted Price: €{price:.2f}")
+    print(f"[*] Current Price: €{price:.2f}")
 
     if price < TARGET_PRICE:
-        print("[+] Price is below €280.00! Sending notification...")
-        send_price_alert(price)
+        print("[+] Price threshold reached! Sending Telegram notification...")
+        send_telegram_alert(price)
     else:
-        print("[-] Price is still above target (€280.00). No email sent.")
+        print(f"[-] Price €{price:.2f} is still above target (€{TARGET_PRICE:.2f}).")
