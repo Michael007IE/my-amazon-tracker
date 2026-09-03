@@ -2,8 +2,8 @@ name: Daily Amazon Price Check
 
 on:
   schedule:
-    # Runs daily at 08:00 UTC (09:00 AM Irish Time)
-    - cron: '0 8 * * *'
+    # Runs daily at 04:56 UTC
+    - cron: '56 4 * * *'
   workflow_dispatch:
 
 jobs:
