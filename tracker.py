@@ -8,7 +8,9 @@ from bs4 import BeautifulSoup
 # ==========================================
 # CONFIGURATION & SECRETS
 # ==========================================
-PRODUCT_URL = "https://www.amazon.ie/TP-Link-Deco-X50-5G-AX3000Mbps-Ultra-Fast/dp/B0BZWMLS6P/"
+PRODUCT_URL = (
+    "https://www.amazon.ie/TP-Link-Deco-X50-5G-AX3000Mbps-Ultra-Fast/dp/B0BZWMLS6P/"
+)
 TARGET_PRICE = 280.00
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -37,11 +39,20 @@ def send_telegram_message(html_message: str):
         print(f"[!] Failed to send Telegram message: {res.text}")
 
 
-def send_price_alert(current_price: float):
+def send_price_notification(current_price: float):
+    """Sends a daily update, highlighting if the target price is met."""
+    if current_price < TARGET_PRICE:
+        header = "🚨 <b>Amazon Price Drop Alert!</b>"
+        status_note = f"🎉 <b>Target met! Price is under €{TARGET_PRICE:.2f}!</b>"
+    else:
+        header = "📊 <b>Daily Amazon Price Update</b>"
+        status_note = f"Target: &lt; €{TARGET_PRICE:.2f} (Still above target)"
+
     message = (
-        f"🚨 <b>Amazon Price Drop Alert!</b>\n\n"
+        f"{header}\n\n"
         f"<b>Product:</b> TP-Link Deco X50-5G\n"
-        f"<b>New Price:</b> <b>€{current_price:.2f}</b> (Target: &lt; €{TARGET_PRICE:.2f})\n\n"
+        f"<b>Current Price:</b> <b>€{current_price:.2f}</b>\n"
+        f"<b>Status:</b> {status_note}\n\n"
         f'<a href="{PRODUCT_URL}">View on Amazon</a>'
     )
     send_telegram_message(message)
@@ -62,7 +73,6 @@ def get_current_price() -> tuple[float | None, str]:
     if not SCRAPER_API_KEY:
         return None, "SCRAPER_API_KEY secret is not set."
 
-    # ScraperAPI endpoint with render_js to ensure dynamic pricing loads
     payload = {
         "api_key": SCRAPER_API_KEY,
         "url": PRODUCT_URL,
@@ -72,7 +82,7 @@ def get_current_price() -> tuple[float | None, str]:
     print("[*] Fetching product page via residential proxy...")
     try:
         response = requests.get("https://api.scraperapi.com/", params=payload, timeout=60)
-        
+
         if response.status_code != 200:
             return None, f"ScraperAPI returned status code {response.status_code}: {response.text[:100]}"
 
@@ -90,7 +100,6 @@ def get_current_price() -> tuple[float | None, str]:
         if price_elem:
             raw_text = price_elem.get_text().strip()
         else:
-            # Fallback to whole + fraction selectors
             whole = soup.select_one(".a-price-whole")
             fraction = soup.select_one(".a-price-fraction")
             if whole:
@@ -117,9 +126,4 @@ if __name__ == "__main__":
         sys.exit(0)
 
     print(f"[*] Current Price: €{price:.2f}")
-
-    if price < TARGET_PRICE:
-        print("[+] Price target met! Sending Telegram notification...")
-        send_price_alert(price)
-    else:
-        print(f"[-] Price €{price:.2f} is still above target (€{TARGET_PRICE:.2f}).")
+    send_price_notification(price)
