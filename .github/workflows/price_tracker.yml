@@ -1,8 +1,8 @@
 name: Daily Amazon Price Check
 
 on:
-  schedule:
-    - cron: '56 4 * * *'
+  #schedule:
+   # - cron: '56 4 * * *'
   workflow_dispatch:
 
 jobs:
